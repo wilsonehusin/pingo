@@ -11,11 +11,6 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
-type Report struct {
-	Sequence int
-	Duration time.Duration
-}
-
 type ResponseError struct {
 	Response icmp.Message
 }
