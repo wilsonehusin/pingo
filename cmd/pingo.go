@@ -36,28 +36,38 @@ func main() {
 	strData := flag.String("strdata", "pingo!", "Data to be sent and expect back")
 	interval := flag.Duration("interval", time.Duration(5)*time.Second, "Time (duration) between pings")
 	timeout := flag.Duration("timeout", time.Duration(0), "Length of timeout between send and receive (0 = no timeout)")
+	singleFire := flag.Bool("single", false, "Only run single round-trip time")
 
 	flag.Parse()
 
 	targetIP := net.UDPAddr{IP: net.ParseIP(*ipAddr)}
 	dataToSend := []byte(*strData)
 
-	userStop := make(chan os.Signal)
-	loopStop := make(chan bool)
+	if *singleFire {
+		duration, err := pingo.Send(targetIP, dataToSend, *timeout)
+		if err != nil {
+			log.Panic(err)
+		}
+		log.Info("received response within ", duration)
+	} else {
 
-	signal.Notify(userStop, os.Interrupt)
+		userStop := make(chan os.Signal)
+		loopStop := make(chan bool)
 
-	go func() {
-		<-userStop
-		loopStop <- true
-	}()
+		signal.Notify(userStop, os.Interrupt)
 
-	results := pingo.SendIndefinitely(targetIP, dataToSend, *interval, *timeout, loopStop)
-	var durations []float64
+		go func() {
+			<-userStop
+			loopStop <- true
+		}()
 
-	for _, result := range results {
-		durations = append(durations, float64(result/time.Microsecond)/1000)
+		results := pingo.SendIndefinitely(targetIP, dataToSend, *timeout, *interval, loopStop)
+		var durations []float64
+
+		for _, result := range results {
+			durations = append(durations, float64(result/time.Microsecond)/1000)
+		}
+		iteration, average := summarize(durations)
+		log.Info("average: ", average, " milliseconds, over ", iteration, " iterations")
 	}
-	iteration, average := summarize(durations)
-	log.Info("average: ", average, " milliseconds, over ", iteration, " iterations")
 }

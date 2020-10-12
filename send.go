@@ -71,7 +71,7 @@ func Send(target net.UDPAddr, data []byte, timeout time.Duration) (time.Duration
 	return sendThroughConnection(connection, target, data)
 }
 
-func SendIndefinitely(target net.UDPAddr, data []byte, interval time.Duration, timeout time.Duration, stop chan bool) []time.Duration {
+func SendIndefinitely(target net.UDPAddr, data []byte, timeout time.Duration, interval time.Duration, stop chan bool) []time.Duration {
 	connection, err := icmp.ListenPacket("udp4", "0.0.0.0")
 	if err != nil {
 		log.Panic(err)
