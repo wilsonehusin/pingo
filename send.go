@@ -1,6 +1,7 @@
 package pingo
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"time"
@@ -10,7 +11,20 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
-func sendThroughConnection(connection *icmp.PacketConn, target net.UDPAddr, data []byte) {
+type Report struct {
+	Sequence int
+	Duration time.Duration
+}
+
+type ResponseError struct {
+	Response icmp.Message
+}
+
+func (e *ResponseError) Error() string {
+	return fmt.Sprintf("received unexpected response type: %+v", e.Response)
+}
+
+func sendThroughConnection(connection *icmp.PacketConn, target net.UDPAddr, data []byte) (time.Duration, error) {
 	message := icmp.Message{
 		Type: ipv4.ICMPTypeEcho, Code: 0,
 		Body: &icmp.Echo{
@@ -21,38 +35,34 @@ func sendThroughConnection(connection *icmp.PacketConn, target net.UDPAddr, data
 
 	encodedMessage, err := message.Marshal(nil)
 	if err != nil {
-		log.Panic(err)
+		return time.Duration(0), err
 	}
 	sendTime := time.Now()
 	if _, err := connection.WriteTo(encodedMessage, &target); err != nil {
-		log.Error(err)
-		return
+		return time.Duration(0), err
 	}
 
 	encodedResponse := make([]byte, 1500)
-	n, peer, err := connection.ReadFrom(encodedResponse)
+	n, _, err := connection.ReadFrom(encodedResponse)
 	if err != nil {
-		log.Error(err)
-		return
+		return time.Duration(0), err
 	}
 	recvDur := time.Since(sendTime)
 
 	response, err := icmp.ParseMessage(ipv4.ICMPTypeEchoReply.Protocol(), encodedResponse[:n])
 	if err != nil {
-		log.Error(err)
-		return
+		return time.Duration(0), err
 	}
 
 	switch response.Type {
 	case ipv4.ICMPTypeEchoReply:
-		responseData := response.Body.(*icmp.Echo).Data
-		log.Infof("received ICMP echo reply from %v: %v (took %v)", peer, string(responseData), recvDur)
+		return recvDur, nil
 	default:
-		log.Warn("received %+v; expected echo response", response)
+		return recvDur, &ResponseError{*response}
 	}
 }
 
-func Send(target net.UDPAddr, data []byte, timeout time.Duration) {
+func Send(target net.UDPAddr, data []byte, timeout time.Duration) (time.Duration, error) {
 	connection, err := icmp.ListenPacket("udp4", "0.0.0.0")
 	if err != nil {
 		log.Panic(err)
@@ -63,10 +73,10 @@ func Send(target net.UDPAddr, data []byte, timeout time.Duration) {
 		log.Trace("timeout is set to ", timeout)
 		connection.SetDeadline(time.Now().Add(timeout))
 	}
-	sendThroughConnection(connection, target, data)
+	return sendThroughConnection(connection, target, data)
 }
 
-func SendIndefinitely(target net.UDPAddr, data []byte, interval time.Duration, timeout time.Duration, stop chan bool) {
+func SendIndefinitely(target net.UDPAddr, data []byte, interval time.Duration, timeout time.Duration, stop chan bool) []time.Duration {
 	connection, err := icmp.ListenPacket("udp4", "0.0.0.0")
 	if err != nil {
 		log.Panic(err)
@@ -75,19 +85,28 @@ func SendIndefinitely(target net.UDPAddr, data []byte, interval time.Duration, t
 
 	if timeout != time.Duration(0) {
 		log.Trace("timeout is set to ", timeout)
-		connection.SetDeadline(time.Now().Add(timeout))
 	}
 
 	ticker := time.NewTicker(interval)
 	log.Info("sending first ping in ", interval)
+
+	var responseDurations []time.Duration
 	for {
 		select {
 		case <-stop:
-			log.Trace("done sending pings")
-			return
+			log.Info("done sending pings")
+			return responseDurations
 		case c := <-ticker.C:
+			if timeout != time.Duration(0) {
+				connection.SetDeadline(time.Now().Add(timeout))
+			}
 			log.Trace("sending at ", c)
-			go sendThroughConnection(connection, target, data)
+			duration, err := sendThroughConnection(connection, target, data)
+			if err != nil {
+				log.Error(err)
+			}
+			log.Info("received response within ", duration)
+			responseDurations = append(responseDurations, duration)
 		}
 	}
 }

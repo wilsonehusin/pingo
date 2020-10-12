@@ -22,6 +22,15 @@ func init() {
 	log.SetLevel(log.InfoLevel)
 }
 
+func summarize(nums []float64) (int, float64) {
+	count := len(nums)
+	sum := 0.0
+	for _, num := range nums {
+		sum += num
+	}
+	return count, (sum / float64(count))
+}
+
 func main() {
 	ipAddr := flag.String("ipaddr", "1.1.1.1", "IP address to target")
 	strData := flag.String("strdata", "pingo!", "Data to be sent and expect back")
@@ -43,5 +52,12 @@ func main() {
 		loopStop <- true
 	}()
 
-	pingo.SendIndefinitely(targetIP, dataToSend, *interval, *timeout, loopStop)
+	results := pingo.SendIndefinitely(targetIP, dataToSend, *interval, *timeout, loopStop)
+	var durations []float64
+
+	for _, result := range results {
+		durations = append(durations, float64(result/time.Microsecond)/1000)
+	}
+	iteration, average := summarize(durations)
+	log.Info("average: ", average, " milliseconds, over ", iteration, " iterations")
 }
