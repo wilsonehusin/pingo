@@ -1,6 +1,7 @@
 package pingo
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -71,32 +72,40 @@ func Send(target net.UDPAddr, data []byte, timeout time.Duration) (time.Duration
 	return sendThroughConnection(connection, target, data)
 }
 
-func SendIndefinitely(target net.UDPAddr, data []byte, timeout time.Duration, interval time.Duration, stop chan bool) []time.Duration {
+type PackageSlip struct {
+	Target   net.UDPAddr
+	Data     []byte
+	Timeout  time.Duration
+	Interval time.Duration
+}
+
+func SendIndefinitely(ctx context.Context) []time.Duration {
+	slip := ctx.Value("packageSlip").(PackageSlip)
 	connection, err := icmp.ListenPacket("udp4", "0.0.0.0")
 	if err != nil {
 		log.Panic(err)
 	}
 	defer connection.Close()
 
-	if timeout != time.Duration(0) {
-		log.Trace("timeout is set to ", timeout)
+	if slip.Timeout != time.Duration(0) {
+		log.Trace("timeout is set to ", slip.Timeout)
 	}
 
-	ticker := time.NewTicker(interval)
-	log.Info("sending first ping in ", interval)
+	ticker := time.NewTicker(slip.Interval)
+	log.Info("sending first ping in ", slip.Interval)
 
 	var responseDurations []time.Duration
 	for {
 		select {
-		case <-stop:
+		case <-ctx.Done():
 			log.Info("done sending pings")
 			return responseDurations
 		case c := <-ticker.C:
-			if timeout != time.Duration(0) {
-				connection.SetDeadline(time.Now().Add(timeout))
+			if slip.Timeout != time.Duration(0) {
+				connection.SetDeadline(time.Now().Add(slip.Timeout))
 			}
 			log.Trace("sending at ", c)
-			duration, err := sendThroughConnection(connection, target, data)
+			duration, err := sendThroughConnection(connection, slip.Target, slip.Data)
 			if err != nil {
 				log.Error(err)
 			}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"net"
 	"os"
@@ -50,18 +51,23 @@ func main() {
 		}
 		log.Info("received response within ", duration)
 	} else {
-
 		userStop := make(chan os.Signal)
-		loopStop := make(chan bool)
+		ctx := context.WithValue(context.Background(), "packageSlip", pingo.PackageSlip{
+			Target:   targetIP,
+			Data:     dataToSend,
+			Timeout:  *timeout,
+			Interval: *interval,
+		})
+		ctx, cancel := context.WithCancel(ctx)
 
 		signal.Notify(userStop, os.Interrupt)
 
 		go func() {
 			<-userStop
-			loopStop <- true
+			cancel()
 		}()
 
-		results := pingo.SendIndefinitely(targetIP, dataToSend, *timeout, *interval, loopStop)
+		results := pingo.SendIndefinitely(ctx)
 		var durations []float64
 
 		for _, result := range results {
