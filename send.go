@@ -58,20 +58,6 @@ func sendThroughConnection(connection *icmp.PacketConn, target net.UDPAddr, data
 	}
 }
 
-func Send(target net.UDPAddr, data []byte, timeout time.Duration) (time.Duration, error) {
-	connection, err := icmp.ListenPacket("udp4", "0.0.0.0")
-	if err != nil {
-		log.Panic(err)
-	}
-	defer connection.Close()
-
-	if timeout != time.Duration(0) {
-		log.Trace("timeout is set to ", timeout)
-		connection.SetDeadline(time.Now().Add(timeout))
-	}
-	return sendThroughConnection(connection, target, data)
-}
-
 type PackageSlip struct {
 	Target   net.UDPAddr
 	Data     []byte
@@ -79,8 +65,21 @@ type PackageSlip struct {
 	Interval time.Duration
 }
 
-func SendIndefinitely(ctx context.Context) []time.Duration {
-	slip := ctx.Value("packageSlip").(PackageSlip)
+func Send(slip PackageSlip) (time.Duration, error) {
+	connection, err := icmp.ListenPacket("udp4", "0.0.0.0")
+	if err != nil {
+		log.Panic(err)
+	}
+	defer connection.Close()
+
+	if slip.Timeout != time.Duration(0) {
+		log.Trace("timeout is set to ", slip.Timeout)
+		connection.SetDeadline(time.Now().Add(slip.Timeout))
+	}
+	return sendThroughConnection(connection, slip.Target, slip.Data)
+}
+
+func SendIndefinitely(ctx context.Context, slip PackageSlip) []time.Duration {
 	connection, err := icmp.ListenPacket("udp4", "0.0.0.0")
 	if err != nil {
 		log.Panic(err)

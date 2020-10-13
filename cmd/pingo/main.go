@@ -44,21 +44,22 @@ func main() {
 	targetIP := net.UDPAddr{IP: net.ParseIP(*ipAddr)}
 	dataToSend := []byte(*strData)
 
+	packageSlip := pingo.PackageSlip{
+		Target:   targetIP,
+		Data:     dataToSend,
+		Timeout:  *timeout,
+		Interval: *interval,
+	}
+
 	if *singleFire {
-		duration, err := pingo.Send(targetIP, dataToSend, *timeout)
+		duration, err := pingo.Send(packageSlip)
 		if err != nil {
 			log.Panic(err)
 		}
 		log.Info("received response within ", duration)
 	} else {
 		userStop := make(chan os.Signal)
-		ctx := context.WithValue(context.Background(), "packageSlip", pingo.PackageSlip{
-			Target:   targetIP,
-			Data:     dataToSend,
-			Timeout:  *timeout,
-			Interval: *interval,
-		})
-		ctx, cancel := context.WithCancel(ctx)
+		ctx, cancel := context.WithCancel(context.Background())
 
 		signal.Notify(userStop, os.Interrupt)
 
@@ -67,7 +68,7 @@ func main() {
 			cancel()
 		}()
 
-		results := pingo.SendIndefinitely(ctx)
+		results := pingo.SendIndefinitely(ctx, packageSlip)
 		var durations []float64
 
 		for _, result := range results {
